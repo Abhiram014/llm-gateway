@@ -1,9 +1,11 @@
 from contextlib import asynccontextmanager
-
+from app.db import SCHEMA
 import asyncpg
 import httpx
 import redis.asyncio as redis
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+
+from app.auth import require_api_key
 from fastapi.responses import JSONResponse
 
 from app.config import (
@@ -26,6 +28,7 @@ from app.schemas import ChatCompletionRequest, ChatCompletionResponse
 async def lifespan(app: FastAPI):
     # Runs once when the server starts
     app.state.db = await asyncpg.create_pool(DATABASE_URL)
+    await app.state.db.execute(SCHEMA)          # <- new: make sure tables exist
     app.state.redis = redis.from_url(REDIS_URL)
     yield  # the app handles requests while paused here
     # Runs once when the server shuts down
@@ -75,7 +78,10 @@ def get_provider(model: str) -> Provider:
 
 
 @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
-async def chat_completions(request: ChatCompletionRequest):
+async def chat_completions(
+    request: ChatCompletionRequest,
+    api_key: dict = Depends(require_api_key),
+):
     provider = get_provider(request.model)
     try:
         return await provider.chat(request)
