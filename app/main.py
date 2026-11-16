@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
+import httpx
 from fastapi import FastAPI, HTTPException
 
+from app.config import DATABASE_URL, OLLAMA_URL, REDIS_URL
+from app.providers.ollama import OllamaProvider
 from app.providers.base import Provider
 from app.providers.mock import MockProvider
 from app.schemas import ChatCompletionRequest, ChatCompletionResponse
@@ -48,18 +51,25 @@ async def health():
 
 PROVIDERS: dict[str, Provider] = {
     "mock": MockProvider(),
+    "ollama": OllamaProvider(OLLAMA_URL),
 }
 
 
 def get_provider(model: str) -> Provider:
-    # For now: any model name starting with "mock" goes to the Mock provider.
-    # Day 3 adds real routing for OpenAI, Anthropic and Ollama.
     if model.startswith("mock"):
         return PROVIDERS["mock"]
+    if model.startswith("ollama/"):
+        return PROVIDERS["ollama"]
     raise HTTPException(status_code=400, detail=f"Unknown model: {model}")
 
 
 @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
 async def chat_completions(request: ChatCompletionRequest):
     provider = get_provider(request.model)
-    return await provider.chat(request)
+    try:
+        return await provider.chat(request)
+    except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Provider '{provider.name}' failed: {e}",
+        )
