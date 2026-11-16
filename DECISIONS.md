@@ -69,3 +69,54 @@ Lets a provider be pointed at a proxy or another host without code changes.
 
 **No paid API keys yet.**
 OpenAI and Anthropic adapters are verified with mocked responses; real calls only need a key in .env, no code changes.
+
+## Day 4: API keys
+
+**Keys are stored as SHA-256 hashes, never in plain text.**
+A stolen database doesn't leak usable keys. The real key is shown once at creation.
+
+**SHA-256, not bcrypt.**
+Keys are 32 random bytes, so they can't be guessed, and a fast hash is safe. Slow hashes like bcrypt are for low-entropy human passwords. Keys are checked on every request, so speed matters.
+
+**Keys are revoked (revoked_at), not deleted.**
+Keeps history for usage logs and audits.
+
+**A key_prefix (first 10 chars) is stored for display.**
+Lets people recognize a key without exposing it.
+
+**Auth is a FastAPI dependency (`Depends(require_api_key)`).**
+One reusable check; it returns the key's id so rate limiting and cost tracking know who is calling. /health stays public for load balancers.
+
+**Parameterized SQL ($1, $2) everywhere.**
+Prevents SQL injection.
+
+**Tables are created at startup with CREATE TABLE IF NOT EXISTS.**
+Simple for now; a migration tool (Alembic) would be the next step as the schema grows.
+
+## Day 5: Rate limiting
+
+**Token bucket algorithm, per API key.**
+Allows short bursts but caps the average rate. Fixed windows allow 2x bursts at window edges; sliding logs cost more memory.
+
+**State lives in Redis, not in the app's memory.**
+All gateway instances share one bucket per key, and Redis answers in well under 1 ms.
+
+**The check runs as a Lua script, so it's atomic.**
+Prevents race conditions where two simultaneous requests both spend the last token.
+
+**Redis's own clock (TIME) is used, not each server's.**
+Gateway instances with slightly different clocks still agree.
+
+**Buckets expire automatically (EXPIRE).**
+Idle keys don't leave data in Redis forever.
+
+**429 with a Retry-After header.**
+Standard "slow down" response; clients like the OpenAI SDK back off automatically.
+
+**Fail open if Redis is down.**
+Briefly losing rate limits is better than blocking all traffic. (A payments system would fail closed.)
+
+**Per-key limits stored in Postgres (rpm_limit, default 60).**
+Added with ALTER TABLE ... ADD COLUMN IF NOT EXISTS, because CREATE TABLE IF NOT EXISTS doesn't change existing tables; a migration tool would handle this as the schema grows.
+
+**Tokens-per-minute limits come after real token counting (Day 7).**

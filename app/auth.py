@@ -15,12 +15,12 @@ def hash_key(key: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()
 
 
-async def create_api_key(db, name: str) -> str:
+async def create_api_key(db, name: str, rpm_limit: int = 60) -> str:
     """Create a key, store only its hash, return the real key (shown once)."""
     key = generate_key()
     await db.execute(
-        "INSERT INTO api_keys (name, key_hash, key_prefix) VALUES ($1, $2, $3)",
-        name, hash_key(key), key[:10],
+        "INSERT INTO api_keys (name, key_hash, key_prefix, rpm_limit) VALUES ($1, $2, $3, $4)",
+        name, hash_key(key), key[:10], rpm_limit,
     )
     return key
 
@@ -38,7 +38,7 @@ async def require_api_key(
                             headers={"WWW-Authenticate": "Bearer"})
 
     row = await request.app.state.db.fetchrow(
-        "SELECT id, name FROM api_keys WHERE key_hash = $1 AND revoked_at IS NULL",
+        "SELECT id, name, rpm_limit FROM api_keys WHERE key_hash = $1 AND revoked_at IS NULL",
         hash_key(credentials.credentials),
     )
     if row is None:

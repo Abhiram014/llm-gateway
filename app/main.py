@@ -4,7 +4,7 @@ import asyncpg
 import httpx
 import redis.asyncio as redis
 from fastapi import Depends, FastAPI, HTTPException
-
+from app.ratelimit import RateLimiter, enforce_rate_limit
 from app.auth import require_api_key
 from fastapi.responses import JSONResponse
 
@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI):
     app.state.db = await asyncpg.create_pool(DATABASE_URL)
     await app.state.db.execute(SCHEMA)          # <- new: make sure tables exist
     app.state.redis = redis.from_url(REDIS_URL)
+    app.state.rate_limiter = RateLimiter(app.state.redis)  
     yield  # the app handles requests while paused here
     # Runs once when the server shuts down
     await app.state.db.close()
@@ -80,7 +81,7 @@ def get_provider(model: str) -> Provider:
 @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
 async def chat_completions(
     request: ChatCompletionRequest,
-    api_key: dict = Depends(require_api_key),
+    api_key: dict = Depends(enforce_rate_limit),
 ):
     provider = get_provider(request.model)
     try:

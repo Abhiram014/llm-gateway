@@ -7,4 +7,6 @@ CREATE TABLE IF NOT EXISTS api_keys (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     revoked_at  TIMESTAMPTZ
 );
+
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS rpm_limit INTEGER NOT NULL DEFAULT 60;
 """
