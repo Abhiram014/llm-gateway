@@ -51,3 +51,21 @@ Reusing connections avoids reconnect cost; the timeout stops a stuck provider fr
 
 **Provider failures return 502 Bad Gateway.**
 4xx = the client's mistake, 502 = the provider behind the gateway failed.
+
+**One OpenAICompatibleProvider class serves OpenAI and Ollama.**
+Both speak OpenAI's format, so one class configured twice avoids duplicate code. It will also cover Groq, Together, vLLM, etc.
+
+**The Anthropic adapter translates both ways.**
+Going in: system messages move to a separate `system` field, and `max_tokens` defaults to 1024 (Anthropic requires it). Coming out: content blocks are joined into one string, `stop_reason` maps to `finish_reason`, and `input/output_tokens` map to `prompt/completion_tokens`.
+
+**Translators are pure functions, tested without a network.**
+Provider classes accept an httpx transport, so tests use MockTransport to simulate OpenAI and Anthropic: real adapter code, no API keys, no cost.
+
+**Routing reads the prefix before "/" and looks it up in a dictionary.**
+Adding a provider = one line in PROVIDERS. `get_provider` never changes.
+
+**All provider URLs come from config, with the real addresses as defaults.**
+Lets a provider be pointed at a proxy or another host without code changes.
+
+**No paid API keys yet.**
+OpenAI and Anthropic adapters are verified with mocked responses; real calls only need a key in .env, no code changes.

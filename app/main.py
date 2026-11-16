@@ -1,18 +1,25 @@
 from contextlib import asynccontextmanager
-import httpx
-from fastapi import FastAPI, HTTPException
 
-from app.config import DATABASE_URL, OLLAMA_URL, REDIS_URL
-from app.providers.ollama import OllamaProvider
-from app.providers.base import Provider
-from app.providers.mock import MockProvider
-from app.schemas import ChatCompletionRequest, ChatCompletionResponse
 import asyncpg
+import httpx
 import redis.asyncio as redis
-
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
-from app.config import DATABASE_URL, REDIS_URL
+from app.config import (
+    ANTHROPIC_API_KEY,
+    ANTHROPIC_BASE_URL,
+    DATABASE_URL,
+    OLLAMA_URL,
+    OPENAI_API_KEY,
+    OPENAI_BASE_URL,
+    REDIS_URL,
+)
+from app.providers.anthropic import AnthropicProvider
+from app.providers.base import Provider
+from app.providers.mock import MockProvider
+from app.providers.openai_compatible import OpenAICompatibleProvider
+from app.schemas import ChatCompletionRequest, ChatCompletionResponse
 
 
 @asynccontextmanager
@@ -49,17 +56,21 @@ async def health():
     healthy = all(v == "ok" for v in status.values())
     return JSONResponse(status, status_code=200 if healthy else 503)
 
+
 PROVIDERS: dict[str, Provider] = {
     "mock": MockProvider(),
-    "ollama": OllamaProvider(OLLAMA_URL),
+    "ollama": OpenAICompatibleProvider("ollama", OLLAMA_URL),
+    "openai": OpenAICompatibleProvider("openai", OPENAI_BASE_URL, OPENAI_API_KEY),
+    "anthropic": AnthropicProvider(ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL),
 }
 
 
 def get_provider(model: str) -> Provider:
     if model.startswith("mock"):
         return PROVIDERS["mock"]
-    if model.startswith("ollama/"):
-        return PROVIDERS["ollama"]
+    prefix, slash, _ = model.partition("/")  # "anthropic/claude-x" -> ("anthropic", "/", "claude-x")
+    if slash and prefix in PROVIDERS:
+        return PROVIDERS[prefix]
     raise HTTPException(status_code=400, detail=f"Unknown model: {model}")
 
 
